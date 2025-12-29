@@ -27,57 +27,41 @@
   <iframe id="pdfFrame" title="PDF Viewer" allow="fullscreen"></iframe>
 
   <script>
-    // ====== PATHS (UPDATED FOR YOUR PDF LOCATION) ======
-    // Your PDF is in: pdfjs/web/pdfs/calendar-jan.pdf
-    const PDF_FILE = "./pdfjs/web/pdfs/calendar-jan.pdf";
-    const PDFJS_VIEWER = "./pdfjs/web/viewer.html";
-    // ====================================================
+    // Viewer location (relative to index.html in repo root)
+    const PDFJS_VIEWER = "pdfjs/web/viewer.html";
+
+    // IMPORTANT: this path is resolved relative to viewer.html (pdfjs/web/)
+    // Since your PDF is in pdfjs/web/pdfs/, use just "pdfs/<file>.pdf"
+    const PDF_FILE_FOR_VIEWER = "pdfs/calendar-jan.pdf";
 
     const iframe = document.getElementById("pdfFrame");
 
+    // Start at page 1, page-fit. (Hash params are supported by the viewer.)
     const viewerUrl =
-      `${PDFJS_VIEWER}?file=${encodeURIComponent(PDF_FILE)}` +
+      `${PDFJS_VIEWER}?file=${encodeURIComponent(PDF_FILE_FOR_VIEWER)}` +
       `#page=1&zoom=page-fit&pagemode=none`;
 
     iframe.src = viewerUrl;
 
-    document.addEventListener("webviewerloaded", () => {
-      try {
-        const win = iframe.contentWindow;
-        if (!win || !win.PDFViewerApplicationOptions) return;
-
-        // 0=auto, 1=light, 2=dark
-        win.PDFViewerApplicationOptions.set("viewerCssTheme", 1);
-
-        // Force consistent defaults:
-        win.PDFViewerApplicationOptions.set("defaultZoomValue", "page-fit");
-        win.PDFViewerApplicationOptions.set("scrollModeOnLoad", 3);
-        win.PDFViewerApplicationOptions.set("spreadModeOnLoad", 0);
-
-        if (win.PDFViewerApplication && typeof win.PDFViewerApplication._forceCssTheme === "function") {
-          win.PDFViewerApplication._forceCssTheme();
-        }
-      } catch (e) {
-        console.warn("PDF.js pre-init option set failed:", e);
-      }
-    });
-
     iframe.addEventListener("load", () => {
       try {
+        const win = iframe.contentWindow;
         const doc = iframe.contentDocument;
-        if (!doc) return;
+        if (!win || !doc) return;
 
+        // Inject CSS for: no toolbar/sidebar; pure-white background
         const style = doc.createElement("style");
         style.textContent = `
+          /* Hide PDF.js chrome */
           #toolbarContainer,
           #secondaryToolbar,
           #sidebarContainer,
           #sidebarResizer,
-          #loadingBar,
-          #errorWrapper {
+          #loadingBar {
             display: none !important;
           }
 
+          /* Let the PDF fill the entire frame */
           #mainContainer,
           #viewerContainer {
             top: 0 !important;
@@ -86,6 +70,7 @@
             bottom: 0 !important;
           }
 
+          /* Force pure white background everywhere */
           html, body,
           #outerContainer,
           #mainContainer,
@@ -93,6 +78,7 @@
             background: #ffffff !important;
           }
 
+          /* Optional: remove shadows/borders around pages */
           .page {
             box-shadow: none !important;
             border: none !important;
@@ -100,24 +86,39 @@
         `;
         doc.head.appendChild(style);
 
-        const win = iframe.contentWindow;
-        if (win && win.PDFViewerApplication && win.PDFViewerApplication.initializedPromise) {
+        // After PDF.js is fully initialized, force the exact viewing mode:
+        // - Page scrolling (one page at a time)
+        // - No spreads (no 2-up)
+        // - Page-fit zoom
+        if (win.PDFViewerApplication && win.PDFViewerApplication.initializedPromise) {
           win.PDFViewerApplication.initializedPromise.then(() => {
-            try {
-              const app = win.PDFViewerApplication;
-              if (app.pdfViewer) {
-                app.pdfViewer.scrollMode = 3;         // Page scrolling
-                app.pdfViewer.spreadMode = 0;         // No spreads (no 2-up)
-                app.pdfViewer.currentScaleValue = "page-fit";
-              }
-              if (app.page !== 1) app.page = 1;
-            } catch (e) {
-              console.warn("PDF.js post-init enforcement failed:", e);
+            const app = win.PDFViewerApplication;
+
+            if (app.pdfViewer) {
+              // 3 = Page scrolling (one page at a time)
+              app.pdfViewer.scrollMode = 3;
+
+              // 0 = No spreads (prevents 2-up / book view)
+              app.pdfViewer.spreadMode = 0;
+
+              // Force fit-to-page
+              app.pdfViewer.currentScaleValue = "page-fit";
             }
+
+            // Ensure page 1
+            if (app.page !== 1) app.page = 1;
+
+            // Force light theme if supported (prevents gray/dark theming surprises)
+            if (win.PDFViewerApplicationOptions) {
+              // 0=auto, 1=light, 2=dark
+              win.PDFViewerApplicationOptions.set("viewerCssTheme", 1);
+            }
+            if (typeof app._forceCssTheme === "function") app._forceCssTheme();
           });
         }
       } catch (e) {
-        console.warn("CSS injection failed:", e);
+        // If something fails, don't crash the page.
+        console.warn("Viewer tweak failed:", e);
       }
     });
   </script>
